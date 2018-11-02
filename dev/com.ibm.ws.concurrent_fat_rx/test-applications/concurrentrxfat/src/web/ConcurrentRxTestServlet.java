@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -60,7 +61,9 @@ import javax.servlet.annotation.WebServlet;
 
 import org.eclipse.microprofile.concurrent.ManagedExecutor;
 import org.eclipse.microprofile.concurrent.ThreadContext;
+import org.eclipse.microprofile.concurrent.ThreadContextBuilder;
 import org.junit.Test;
+import org.test.context.location.CurrentLocation;
 
 import componenttest.app.FATServlet;
 
@@ -1245,16 +1248,10 @@ public class ConcurrentRxTestServlet extends FATServlet {
         final CompletableFuture<String> cf = new CompletableFuture<String>();
         CompletionStage<Void> cs1 = cs0.thenAcceptAsync(value -> cf.complete(Thread.currentThread().getName() + ":" + value));
 
-        // It's odd that the lambda supplied to cf.complete could run on the thread that invokes cf.get,
-        // but that appears to happen infrequently, and it is Java's code, not OpenLiberty.  The test can
-        // cope with it by polling for the cf to be done.
-        for (long start = System.nanoTime(); !cf.isDone() && System.nanoTime() - start < TIMEOUT_NS; TimeUnit.MILLISECONDS.sleep(200));
-        assertTrue(cf.isDone());
-
-        String result = cf.getNow("value-if-absent");
+        String result = cf.get(TIMEOUT_NS, TimeUnit.NANOSECONDS);
         assertTrue(result, result.endsWith(":86"));
         assertTrue(result, result.startsWith("Default Executor-thread-"));
-        assertTrue(result, !result.startsWith(Thread.currentThread().getName()));
+        assertTrue(result, !result.startsWith(Thread.currentThread().getName() + ':'));
 
         // Disallow CompletableFuture methods on dependent stage:
         CompletableFuture<Void> cf1 = (CompletableFuture<Void>) cs1;
@@ -1439,6 +1436,21 @@ public class ConcurrentRxTestServlet extends FATServlet {
         assertEquals(Long.valueOf(100), cf0.get(TIMEOUT_NS, TimeUnit.NANOSECONDS));
         assertTrue(cf0.isDone());
         assertFalse(cf0.isCompletedExceptionally());
+    }
+
+    // TODO replace this test with one that expects the custom thread context to be propagated to completion stage actions
+    @Test
+    public void testCustomContextProvider() throws Exception {
+        CurrentLocation.setLocation("Minnesota");
+        try {
+            assertEquals(6.875, CurrentLocation.getStateSalesTax(100.0), 0.000001);
+        } finally {
+            CurrentLocation.setLocation("");
+        }
+
+        ServiceLoader<org.eclipse.microprofile.concurrent.spi.ThreadContextProvider> providers = ServiceLoader
+                        .load(org.eclipse.microprofile.concurrent.spi.ThreadContextProvider.class);
+        providers.iterator().next();
     }
 
     /**
@@ -1717,7 +1729,7 @@ public class ConcurrentRxTestServlet extends FATServlet {
         String result = cf2.get();
         assertTrue(result, result.endsWith(":5f"));
         assertTrue(result, result.startsWith("Default Executor-thread-"));
-        assertTrue(result, !result.startsWith(Thread.currentThread().getName()));
+        assertTrue(result, !result.startsWith(Thread.currentThread().getName() + ':'));
 
         // obtrude and the get operation above are possible having obtained a CompletableFuture
         cf2.obtrudeValue("95");
@@ -3455,6 +3467,27 @@ public class ConcurrentRxTestServlet extends FATServlet {
             throw new Exception((Throwable) lookupResult);
         else
             fail("Unexpected result of lookup: " + lookupResult);
+    }
+
+    /**
+     * Basic test of ThreadContextBuilder used to create a ThreadContext with customized context propagation.
+     * TODO finish writing this test after ThreadContext is more fully implemented.
+     */
+    @Test
+    public void testThreadContextBuilder() throws Exception {
+        ThreadContext contextSvc = ThreadContextBuilder.instance().propagated(ThreadContext.APPLICATION).build();
+        Supplier<Object> supplier = contextSvc.withCurrentContext((Supplier<Object>) () -> { // TODO remove cast
+            try {
+                return InitialContext.doLookup("java:comp/env/executorRef"); // requires application context
+            } catch (NamingException x) {
+                throw new RuntimeException(x);
+            }
+        });
+
+        // Run on a thread that lacks access to the application's name space
+        Future<?> resultRef = testThreads.submit(() -> supplier.get());
+        Object result = resultRef.get();
+        assertNotNull(result);
     }
 
     /**
