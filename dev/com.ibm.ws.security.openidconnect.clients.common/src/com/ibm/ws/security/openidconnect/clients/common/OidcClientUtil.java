@@ -81,7 +81,10 @@ public class OidcClientUtil {
             SSLSocketFactory sslSocketFactory,
             boolean isHostnameVerification,
             String authMethod,
-            String resources, HashMap<String, String> customParams) throws Exception {
+            String resources,
+            HashMap<String, String> customParams,
+            boolean useSystemPropertiesForHttpClientConnections) throws Exception {
+
         // List<String> result = new ArrayList<String>();
         List<NameValuePair> params = new ArrayList<NameValuePair>();
         params.add(new BasicNameValuePair(ClientConstants.GRANT_TYPE, grantType));
@@ -95,8 +98,9 @@ public class OidcClientUtil {
             params.add(new BasicNameValuePair(Constants.CLIENT_ID, clientId));
             params.add(new BasicNameValuePair(Constants.CLIENT_SECRET, clientSecret));
         }
+
         handleCustomParams(params, customParams); // custom token ep params
-        Map<String, Object> postResponseMap = postToTokenEndpoint(tokenEnpoint, params, clientId, clientSecret, sslSocketFactory, isHostnameVerification, authMethod);
+        Map<String, Object> postResponseMap = postToTokenEndpoint(tokenEnpoint, params, clientId, clientSecret, sslSocketFactory, isHostnameVerification, authMethod, useSystemPropertiesForHttpClientConnections);
 
         String tokenResponse = oidcHttpUtil.extractTokensFromResponse(postResponseMap);
 
@@ -138,7 +142,7 @@ public class OidcClientUtil {
     }
 
     public Map<String, Object> checkToken(String tokenInfor, String clientId, @Sensitive String clientSecret,
-            String accessToken, boolean isHostnameVerification, String authMethod, SSLSocketFactory sslSocketFactory) throws Exception {
+            String accessToken, boolean isHostnameVerification, String authMethod, SSLSocketFactory sslSocketFactory, boolean useSystemPropertiesForHttpClientConnections) throws Exception {
         List<NameValuePair> params = new ArrayList<NameValuePair>();
         params.add(new BasicNameValuePair("token", accessToken));
 
@@ -148,7 +152,7 @@ public class OidcClientUtil {
         }
 
         Map<String, Object> postResponseMap = postToCheckTokenEndpoint(tokenInfor,
-                params, clientId, clientSecret, isHostnameVerification, authMethod, sslSocketFactory);
+                params, clientId, clientSecret, isHostnameVerification, authMethod, sslSocketFactory, useSystemPropertiesForHttpClientConnections);
 
         // String tokenResponse =
         // oidcHttpUtil.extractTokensFromResponse(postResponseMap);
@@ -158,11 +162,11 @@ public class OidcClientUtil {
     }
 
     public Map<String, Object> getUserinfo(String userInfor, String accessToken, SSLSocketFactory sslSocketFactory,
-            boolean isHostnameVerification) throws Exception {
+            boolean isHostnameVerification, boolean useSystemPropertiesForHttpClientConnections) throws Exception {
         List<NameValuePair> params = new ArrayList<NameValuePair>();
         // params.add(new BasicNameValuePair("access_token", accessToken));
 
-        Map<String, Object> getResponseMap = getFromUserinfoEndpoint(userInfor, params, accessToken, sslSocketFactory, isHostnameVerification);
+        Map<String, Object> getResponseMap = getFromUserinfoEndpoint(userInfor, params, accessToken, sslSocketFactory, isHostnameVerification, useSystemPropertiesForHttpClientConnections);
         return getResponseMap;
         // String userinfoResponse =
         // oidcHttpUtil.extractTokensFromResponse(getResponseMap);
@@ -176,9 +180,9 @@ public class OidcClientUtil {
             @Sensitive String baPassword,
             SSLSocketFactory sslSocketFactory,
             boolean isHostnameVerification,
-            String authMethod)
+            String authMethod, boolean useSystemPropertiesForHttpClientConnections)
             throws Exception {
-        return oidcHttpUtil.postToEndpoint(tokenEnpoint, params, baUsername, baPassword, null, sslSocketFactory, commonHeaders, isHostnameVerification, authMethod);
+        return oidcHttpUtil.postToEndpoint(tokenEnpoint, params, baUsername, baPassword, null, sslSocketFactory, commonHeaders, isHostnameVerification, authMethod, useSystemPropertiesForHttpClientConnections);
     }
 
     Map<String, Object> postToCheckTokenEndpoint(String tokenEnpoint,
@@ -187,19 +191,21 @@ public class OidcClientUtil {
             @Sensitive String baPassword,
             boolean isHostnameVerification,
             String authMethod,
-            SSLSocketFactory sslSocketFactory)
+            SSLSocketFactory sslSocketFactory,
+            boolean useSystemPropertiesForHttpClientConnections)
             throws Exception {
         return oidcHttpUtil.postToIntrospectEndpoint(tokenEnpoint, params,
-                baUsername, baPassword, null, sslSocketFactory, commonHeaders, isHostnameVerification, authMethod);
+                baUsername, baPassword, null, sslSocketFactory, commonHeaders, isHostnameVerification, authMethod, useSystemPropertiesForHttpClientConnections);
     }
 
     Map<String, Object> getFromUserinfoEndpoint(String userInforEndpoint,
             List<NameValuePair> params,
             String accessToken,
             SSLSocketFactory sslSocketFactory,
-            boolean isHostnameVerification)
+            boolean isHostnameVerification,
+            boolean useSystemPropertiesForHttpClientConnections)
             throws HttpException, IOException {
-        return getFromEndpoint(userInforEndpoint, params, null, null, accessToken, sslSocketFactory, isHostnameVerification);
+        return getFromEndpoint(userInforEndpoint, params, null, null, accessToken, sslSocketFactory, isHostnameVerification, useSystemPropertiesForHttpClientConnections);
     }
 
     Map<String, Object> getFromEndpoint(String url,
@@ -208,7 +214,8 @@ public class OidcClientUtil {
             @Sensitive String baPassword,
             String accessToken,
             SSLSocketFactory sslSocketFactory,
-            boolean isHostnameVerification)
+            boolean isHostnameVerification,
+            boolean useSystemPropertiesForHttpClientConnections)
             throws HttpException, IOException {
 
         String query = null;
@@ -230,7 +237,7 @@ public class OidcClientUtil {
             request.setHeader(ClientConstants.AUTHORIZATION, ClientConstants.BEARER + accessToken);
         }
 
-        HttpClient httpClient = baUsername != null ? oidcHttpUtil.createHTTPClient(sslSocketFactory, url, isHostnameVerification, baUsername, baPassword) : oidcHttpUtil.createHTTPClient(sslSocketFactory, url, isHostnameVerification);
+        HttpClient httpClient = baUsername != null ? oidcHttpUtil.createHTTPClient(sslSocketFactory, url, isHostnameVerification, baUsername, baPassword, useSystemPropertiesForHttpClientConnections) : oidcHttpUtil.createHTTPClient(sslSocketFactory, url, isHostnameVerification, useSystemPropertiesForHttpClientConnections);
 
         HttpResponse responseCode = httpClient.execute(request);
 
