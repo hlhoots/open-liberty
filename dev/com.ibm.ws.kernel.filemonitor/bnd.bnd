@@ -59,3 +59,5 @@ instrument.classesExcludes: com/ibm/ws/kernel/filemonitor/internal/resources/*.c
 	com.ibm.ws.kernel.service;version=latest, \
 	com.ibm.ws.kernel.boot.logging;version=latest, \
 	com.ibm.ws.kernel.security.thread;version=latest
+
+IBM-Test-Fixes:OL123456

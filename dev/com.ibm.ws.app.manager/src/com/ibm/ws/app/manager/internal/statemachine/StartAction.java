@@ -10,6 +10,7 @@
  *******************************************************************************/
 package com.ibm.ws.app.manager.internal.statemachine;
 
+import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -132,6 +133,14 @@ class StartAction implements Action {
         try {
             @SuppressWarnings("rawtypes")
             ApplicationHandler handler = _aii.getHandler();
+
+            // Check that we have the whole file before monitor setup else potential ZipError!
+            boolean isComplete = false;
+            File appFile = new File(_aii.getLocation());
+            while (isComplete == false) {
+                isComplete = isCompletelyWritten(appFile);
+            }
+
             @SuppressWarnings("unchecked")
             ApplicationMonitoringInformation ami = handler.setUpApplicationMonitoring(_aii);
             _aii.setApplicationMonitoringInformation(ami);
@@ -147,8 +156,22 @@ class StartAction implements Action {
         }
     }
 
+    private boolean isCompletelyWritten(File file) throws InterruptedException {
+        Long startFileSize = file.length();
+        Thread.sleep(1000);
+        Long endFileSize = file.length();
+
+        Tr.info(_tc, "Comparing file size of application ['start' with '1 second later check'] :: startSize = " + startFileSize + " || nextSize = " + endFileSize);
+
+        if (startFileSize.equals(endFileSize)) {
+            return true;
+        }
+
+        return false;
+    }
+
     /**
-     * 
+     *
      */
     private void stopSlowStartMessage() {
         Future<?> slow = _slowMessageAction.getAndSet(null);

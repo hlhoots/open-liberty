@@ -11,6 +11,7 @@
  */
 package com.ibm.ws.artifact.zip.internal;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -23,6 +24,8 @@ import java.util.NoSuchElementException;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import com.ibm.websphere.ras.Tr;
+import com.ibm.websphere.ras.TraceComponent;
 import com.ibm.websphere.ras.annotation.Trivial;
 import com.ibm.wsspi.artifact.ArtifactContainer;
 import com.ibm.wsspi.artifact.ArtifactEntry;
@@ -34,50 +37,52 @@ import com.ibm.wsspi.kernel.service.utils.PathUtils;
  * Provides two capabilities:
  *
  * <ul><li>{@link #collectZipEntries} builds a table of the zip entries
- *         of a zip file.  The table is sorted using the standard path
- *         comparator {@link PathUtils#PATH_COMPARATOR}.  Leading and
- *         trailing slashes are removed from paths.</li>
- *     <li>{@link #collectIteratorData} builds a table of child paths.</li>
+ * of a zip file. The table is sorted using the standard path
+ * comparator {@link PathUtils#PATH_COMPARATOR}. Leading and
+ * trailing slashes are removed from paths.</li>
+ * <li>{@link #collectIteratorData} builds a table of child paths.</li>
  * </ul>
  *
  * The capabilities replace function which was previously provided by
- * {@link java.util.TreeMap} and {@link java.util.NavigableMap}.  However,
- * these are poorly tuned for the needs of zip file containers.  Three problems
+ * {@link java.util.TreeMap} and {@link java.util.NavigableMap}. However,
+ * these are poorly tuned for the needs of zip file containers. Three problems
  * are prominent:
  *
  * First, {@link java.util.TreeMap} is tuned to enable dynamic updates, with
- * machinery to maintain a balanced tree.  This does not fit the usage pattern,
+ * machinery to maintain a balanced tree. This does not fit the usage pattern,
  * which has a fixed collection of elements.
  *
  * Dynamic addition to the tree map can be avoided by building a sorted mapping
  * and doing {@link java.util.SortedMap#putAll}, which is is tuned by tree map
- * to quickly add the sorted elements.  However, a second problem still remains.
+ * to quickly add the sorted elements. However, a second problem still remains.
  *
  * Second, using {@link java.util.NavigableMap#subMap} to select a subset for
  * iteration generates a range of all entries which are descendants of the range,
- * not just immediate children.  Code which performs iteration must iterate across
- * the entire sub-range to select the unique immediate children.  That leads to a
+ * not just immediate children. Code which performs iteration must iterate across
+ * the entire sub-range to select the unique immediate children. That leads to a
  * large amount of extra iteration, since iteration across sub-trees will encounter
  * the same entries.
  *
  * Third, a tree map uses entries which require considerably more storage than
- * simple map entries.  That is, type {@link java.util.TreeMap.Entry} has fields:
+ * simple map entries. That is, type {@link java.util.TreeMap.Entry} has fields:
  *
  * <code>
- *     Entry<K,V> implements Map.Entry<K,V> {
- *         K key;
- *         V value;
- *         Entry<K,V> left;
- *         Entry<K,V> right;
- *         Entry<K,V> parent;
- *         boolean color = BLACK;
- *     }
+ * Entry<K,V> implements Map.Entry<K,V> {
+ * K key;
+ * V value;
+ * Entry<K,V> left;
+ * Entry<K,V> right;
+ * Entry<K,V> parent;
+ * boolean color = BLACK;
+ * }
  * </code>
  *
  * Whereas a simple implementation of {@link java.util.Map.Entry} requires only
  * a key pointer and a value pointer.
  */
 public class ZipFileContainerUtils {
+
+    static TraceComponent tc = Tr.register(ZipFileContainerUtils.class);
 
     public static class ZipFileEntryIterator implements Iterator<ArtifactEntry> {
         private final ZipFileContainer rootContainer;
@@ -91,10 +96,10 @@ public class ZipFileContainerUtils {
 
         @Trivial
         public ZipFileEntryIterator(
-            ZipFileContainer rootContainer,
-            ArtifactContainer nestedContainer,
-            ZipEntryData[] allEntryData,
-            ZipFileContainerUtils.IteratorData iteratorData) {
+                                    ZipFileContainer rootContainer,
+                                    ArtifactContainer nestedContainer,
+                                    ZipEntryData[] allEntryData,
+                                    ZipFileContainerUtils.IteratorData iteratorData) {
 
             this.rootContainer = rootContainer;
             this.allEntryData = allEntryData;
@@ -107,13 +112,15 @@ public class ZipFileContainerUtils {
             this.index = 0;
         }
 
+        @Override
         @Trivial
         public boolean hasNext() {
-            return ( index < locations.length );
+            return (index < locations.length);
         }
 
+        @Override
         public ZipFileEntry next() {
-            if ( index >= locations.length ) {
+            if (index >= locations.length) {
                 throw new NoSuchElementException();
             }
 
@@ -123,7 +130,7 @@ public class ZipFileContainerUtils {
             String nextPath = nextEntryData.r_getPath();
 
             int parentLen;
-            if ( parentPath.isEmpty() ) {
+            if (parentPath.isEmpty()) {
                 parentLen = 0;
             } else {
                 parentLen = parentPath.length() + 1;
@@ -142,7 +149,7 @@ public class ZipFileContainerUtils {
             String entryPath;
 
             int slashLoc = nextPath.indexOf('/', parentLen);
-            if ( slashLoc == -1 ) {
+            if (slashLoc == -1) {
                 // The location is an immediate child.
                 entryName = nextPath.substring(parentLen);
                 entryPath = nextPath;
@@ -156,13 +163,14 @@ public class ZipFileContainerUtils {
             String a_entryPath = "/" + entryPath;
 
             ZipFileEntry nextZipFileEntry = rootContainer.createEntry(
-                nestedContainer,
-                entryName, a_entryPath,
-                location, nextEntryData);
+                                                                      nestedContainer,
+                                                                      entryName, a_entryPath,
+                                                                      location, nextEntryData);
 
             return nextZipFileEntry;
         }
 
+        @Override
         public void remove() {
             throw new UnsupportedOperationException("remove");
         }
@@ -177,8 +185,8 @@ public class ZipFileContainerUtils {
      * The locations array should never be empty: No iterator data is stored
      * for paths which have no children.
      *
-     * Each location represents a unique child of the path.  Each location may
-     * represent either an immediate child or a grandchild.  For example, the
+     * Each location represents a unique child of the path. Each location may
+     * represent either an immediate child or a grandchild. For example, the
      * paths:
      *
      * <pre>
@@ -214,44 +222,44 @@ public class ZipFileContainerUtils {
 
     /**
      * Allocate an offsets list.
-     * 
+     *
      * If no discarded list is available, allocate a new list.
-     * 
+     *
      * Otherwise, use one of the discarded lists.
-     * 
+     *
      * @param offsetsStorage Storage of discarded offset lists.
-     * 
+     *
      * @return An allocated offsets list.
      */
     private static List<Integer> allocateOffsets(List<List<Integer>> offsetsStorage) {
-        if ( offsetsStorage.isEmpty() ) {
+        if (offsetsStorage.isEmpty()) {
             return new ArrayList<Integer>();
         } else {
-            return ( offsetsStorage.remove(0) );
+            return (offsetsStorage.remove(0));
         }
     }
-    
+
     /**
      * Release an offsets list to storage.
-     * 
+     *
      * Answer the offsets list converted to a raw array of integers.
-     * 
+     *
      * @param offsetsStorage Storage into which to place the
-     *     offset list.
+     *            offset list.
      * @param offsets The offset list which is to be released to storage.
-     * 
+     *
      * @return The offset list converted to a raw list of integers.
      */
-    private static int[] releaseOffsets(List<List<Integer>> offsetsStorage, List<Integer> offsets) {        
+    private static int[] releaseOffsets(List<List<Integer>> offsetsStorage, List<Integer> offsets) {
         int numValues = offsets.size();
-        
+
         int[] extractedValues;
-        
-        if ( numValues == 0 ) {
+
+        if (numValues == 0) {
             extractedValues = EMPTY_OFFSETS_ARRAY;
         } else {
             extractedValues = new int[numValues];
-            for ( int valueNo = 0; valueNo < numValues; valueNo++ ) {
+            for (int valueNo = 0; valueNo < numValues; valueNo++) {
                 extractedValues[valueNo] = offsets.get(valueNo).intValue();
             }
         }
@@ -269,7 +277,7 @@ public class ZipFileContainerUtils {
      *
      * The entries must be in ascending order per {@link PathUtils#PATH_COMPARATOR}.
      *
-     * Only place data for paths which have no children.  In particular, leaf entries,
+     * Only place data for paths which have no children. In particular, leaf entries,
      * which should be most of the entries of the enclosing zip file, have no children.
      *
      * See {@link IteratorData} for additional details.
@@ -298,7 +306,7 @@ public class ZipFileContainerUtils {
         List<String> r_pathStack = new ArrayList<String>(32);
         List<List<Integer>> offsetsStack = new ArrayList<List<Integer>>(32);
 
-        for ( int nextOffset = 0; nextOffset < zipEntryData.length; nextOffset++ ) {
+        for (int nextOffset = 0; nextOffset < zipEntryData.length; nextOffset++) {
             String r_nextPath = zipEntryData[nextOffset].r_getPath();
             int r_nextPathLen = r_nextPath.length();
 
@@ -307,11 +315,11 @@ public class ZipFileContainerUtils {
             // Backup until a common branch is located, emitting nesting data
             // for each branch we cross.
 
-            while ( !isChildOf(r_nextPath, r_nextPathLen, r_lastPath, r_lastPathLen) ) {
-                if ( offsets != EMPTY_OFFSETS ) {
+            while (!isChildOf(r_nextPath, r_nextPathLen, r_lastPath, r_lastPathLen)) {
+                if (offsets != EMPTY_OFFSETS) {
                     allNestingData.put(
-                        r_lastPath,
-                        new IteratorData( r_lastPath, releaseOffsets(offsetsStorage, offsets) ) );
+                                       r_lastPath,
+                                       new IteratorData(r_lastPath, releaseOffsets(offsetsStorage, offsets)));
                 }
 
                 nestingDepth--;
@@ -334,11 +342,11 @@ public class ZipFileContainerUtils {
             Integer nextOffsetObj = Integer.valueOf(nextOffset);
 
             int lastSlashLoc = r_lastPathLen + 1;
-            while ( lastSlashLoc != -1 ) {
+            while (lastSlashLoc != -1) {
                 int nextSlashLoc = r_nextPath.indexOf('/', lastSlashLoc);
                 String r_nextPartialPath;
                 int r_nextPartialPathLen;
-                if ( nextSlashLoc == -1 ) {
+                if (nextSlashLoc == -1) {
                     r_nextPartialPath = r_nextPath;
                     r_nextPartialPathLen = r_nextPathLen;
                     lastSlashLoc = nextSlashLoc;
@@ -348,7 +356,7 @@ public class ZipFileContainerUtils {
                     lastSlashLoc = nextSlashLoc + 1;
                 }
 
-                if ( offsets == EMPTY_OFFSETS ) {
+                if (offsets == EMPTY_OFFSETS) {
                     offsets = allocateOffsets(offsetsStorage);
                 }
                 offsets.add(nextOffsetObj);
@@ -368,11 +376,11 @@ public class ZipFileContainerUtils {
         //
         // Finish off each of those nestings.
 
-        while ( nestingDepth > 0 ) {
-            if ( offsets != EMPTY_OFFSETS ) {
+        while (nestingDepth > 0) {
+            if (offsets != EMPTY_OFFSETS) {
                 allNestingData.put(
-                    r_lastPath,
-                    new IteratorData( r_lastPath, releaseOffsets(offsetsStorage, offsets) ) );
+                                   r_lastPath,
+                                   new IteratorData(r_lastPath, releaseOffsets(offsetsStorage, offsets)));
             }
             nestingDepth--;
             r_lastPath = r_pathStack.remove(nestingDepth);
@@ -381,10 +389,10 @@ public class ZipFileContainerUtils {
 
         // If root data remains, finish that off too.
 
-        if ( offsets != EMPTY_OFFSETS ) {
+        if (offsets != EMPTY_OFFSETS) {
             allNestingData.put(
-                r_lastPath,
-                new IteratorData( r_lastPath, releaseOffsets(offsetsStorage, offsets) ) );
+                               r_lastPath,
+                               new IteratorData(r_lastPath, releaseOffsets(offsetsStorage, offsets)));
         }
 
         return allNestingData;
@@ -392,16 +400,16 @@ public class ZipFileContainerUtils {
 
     @Trivial
     private static boolean isChildOf(
-        String childPath, int childLen,
-        String parentPath, int parentLen) {
+                                     String childPath, int childLen,
+                                     String parentPath, int parentLen) {
 
-        if ( parentLen == 0 ) {
+        if (parentLen == 0) {
             return true;
-        } else if ( childLen <= parentLen ) {
+        } else if (childLen <= parentLen) {
             return false;
-        } else  if ( childPath.charAt(parentLen) != '/' ) {
+        } else if (childPath.charAt(parentLen) != '/') {
             return false;
-        } else  if ( !childPath.regionMatches(0, parentPath, 0, parentLen) ) {
+        } else if (!childPath.regionMatches(0, parentPath, 0, parentLen)) {
             return false;
         }
         return true;
@@ -412,8 +420,8 @@ public class ZipFileContainerUtils {
     public static class ZipEntryData {
         /**
          * Create zip entry data with only the relative path
-         * set.  This is for use in array searching operations.
-         * 
+         * set. This is for use in array searching operations.
+         *
          * @param r_path The relative path for the new data.
          */
         @Trivial
@@ -422,17 +430,17 @@ public class ZipFileContainerUtils {
             this.r_path = r_path;
             this.size = -1L;
             this.time = -1L;
-            
+
             this.offset = -1;
         }
-        
-        @Trivial        
+
+        @Trivial
         public ZipEntryData(ZipEntry zipEntry) {
             this.path = zipEntry.getName();
             this.r_path = stripPath(this.path);
             this.size = zipEntry.getSize();
             this.time = zipEntry.getTime();
-            
+
             this.offset = -1;
         }
 
@@ -456,11 +464,11 @@ public class ZipFileContainerUtils {
         @Trivial
         public String getPath() {
             return path;
-        }            
+        }
 
         @Trivial
         public boolean isDirectory() {
-            return ( path.charAt( path.length() - 1 ) == '/' ); 
+            return (path.charAt(path.length() - 1) == '/');
         }
 
         @Trivial
@@ -469,7 +477,7 @@ public class ZipFileContainerUtils {
         }
 
         //
-        
+
         private final long size;
         private final long time;
 
@@ -477,17 +485,18 @@ public class ZipFileContainerUtils {
         public long getSize() {
             return size;
         }
-        
+
         @Trivial
         public long getTime() {
             return time;
         }
     }
-    
+
     public static class ZipEntryDataComparator implements Comparator<ZipEntryData> {
+        @Override
         @Trivial
         public int compare(ZipEntryData data1, ZipEntryData data2) {
-            return PathUtils.PATH_COMPARATOR.compare( data1.r_getPath(), data2.r_getPath() );
+            return PathUtils.PATH_COMPARATOR.compare(data1.r_getPath(), data2.r_getPath());
         }
     }
 
@@ -509,12 +518,30 @@ public class ZipFileContainerUtils {
     public static ZipEntryData[] collectZipEntries(ZipFile zipFile) {
         final List<ZipEntryData> entriesList = new ArrayList<ZipEntryData>();
 
-        final Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
-        while ( zipEntries.hasMoreElements() ) {
-            entriesList.add( new ZipEntryData( zipEntries.nextElement() ) );
+        String fileName = zipFile.getName();
+        File file = new File(fileName);
+        long fileLen = 0;
+        if (file.exists()) {
+            fileLen = file.length();
+            Tr.info(tc, "Processing = " + fileName + " comment = " + zipFile.getComment() + " file size = " + fileLen);
+        } else {
+            System.out.println("File at " + fileName + " didnt exist!");
         }
-        
-        ZipEntryData[] entryData = entriesList.toArray( new ZipEntryData[ entriesList.size() ] );
+
+        final Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
+        ZipEntry entry = null;
+        while (zipEntries.hasMoreElements()) {
+            try {
+                entry = zipEntries.nextElement();
+                entriesList.add(new ZipEntryData(entry));
+                Tr.info(tc, "Processing entry = " + entry.getName() + " and file size = " + fileLen);
+            } catch (Exception e) {
+                Tr.info(tc, "EXCEPTION caught on entry = " + entry.getName() + " and file size = " + file.length());
+                throw e;
+            }
+        }
+
+        ZipEntryData[] entryData = entriesList.toArray(new ZipEntryData[entriesList.size()]);
 
         Arrays.sort(entryData, ZIP_ENTRY_DATA_COMPARATOR);
 
@@ -523,30 +550,30 @@ public class ZipFileContainerUtils {
 
     /**
      * Create a table of entry data using the relative paths of the entries as
-     * keys.  As a side effect, set the offset of each entry data to its location
+     * keys. As a side effect, set the offset of each entry data to its location
      * int he entry data array.
-     * 
+     *
      * @param entryData The array of entry data to place in a table.
-     * 
+     *
      * @return The table of entry data.
      */
     @Trivial
     public static Map<String, ZipEntryData> setLocations(ZipEntryData[] entryData) {
-    	Map<String, ZipEntryData> entryDataMap = new HashMap<String, ZipEntryData>(entryData.length);
-    	
-    	for ( int entryNo = 0; entryNo < entryData.length; entryNo++ ) {
-    		ZipEntryData entry = entryData[entryNo];
-    		entry.setOffset(entryNo);
-    		entryDataMap.put(entry.r_path, entry);
-    	}
-    	
-    	return entryDataMap;
+        Map<String, ZipEntryData> entryDataMap = new HashMap<String, ZipEntryData>(entryData.length);
+
+        for (int entryNo = 0; entryNo < entryData.length; entryNo++) {
+            ZipEntryData entry = entryData[entryNo];
+            entry.setOffset(entryNo);
+            entryDataMap.put(entry.r_path, entry);
+        }
+
+        return entryDataMap;
     }
 
     /**
      * Locate a path in a collection of entries.
      *
-     * Answer the offset of the entry which has the specified path.  If the
+     * Answer the offset of the entry which has the specified path. If the
      * path is not found, answer -1 times ( the insertion point of the path
      * minus one ).
      *
@@ -573,11 +600,11 @@ public class ZipFileContainerUtils {
         // A search for "z"        answers "-5" (inexact; insertion point is 4)
 
         return Arrays.binarySearch(
-            entryData,
-            targetData,
-            ZipFileContainerUtils.ZIP_ENTRY_DATA_COMPARATOR);
+                                   entryData,
+                                   targetData,
+                                   ZipFileContainerUtils.ZIP_ENTRY_DATA_COMPARATOR);
     }
-    
+
     //
 
     /**
@@ -592,25 +619,25 @@ public class ZipFileContainerUtils {
     private static String stripPath(String path) {
         int pathLen = path.length();
 
-        if ( pathLen == 0 ) {
+        if (pathLen == 0) {
             return path;
 
-        } else if ( pathLen == 1 ) {
-            if ( path.charAt(0) == '/' ) {
+        } else if (pathLen == 1) {
+            if (path.charAt(0) == '/') {
                 return "";
             } else {
                 return path;
             }
 
         } else {
-            if ( path.charAt(0) == '/' ) {
-                if ( path.charAt(pathLen - 1) == '/' ) {
-                    return path.substring(1,  pathLen - 1);
+            if (path.charAt(0) == '/') {
+                if (path.charAt(pathLen - 1) == '/') {
+                    return path.substring(1, pathLen - 1);
                 } else {
                     return path.substring(1, pathLen);
                 }
             } else {
-                if ( path.charAt(pathLen - 1) == '/' ) {
+                if (path.charAt(pathLen - 1) == '/') {
                     return path.substring(0, pathLen - 1);
                 } else {
                     return path;

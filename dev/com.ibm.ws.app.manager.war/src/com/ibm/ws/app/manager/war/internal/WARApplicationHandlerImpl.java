@@ -15,6 +15,8 @@ import java.util.concurrent.Future;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 
+import com.ibm.websphere.ras.Tr;
+import com.ibm.websphere.ras.TraceComponent;
 import com.ibm.ws.app.manager.module.DeployedAppInfo;
 import com.ibm.ws.app.manager.module.DeployedAppInfoFactory;
 import com.ibm.ws.threading.FutureMonitor;
@@ -30,6 +32,8 @@ public class WARApplicationHandlerImpl implements ApplicationHandler<DeployedApp
     private FutureMonitor futureMonitor;
     private DeployedAppInfoFactory deployedAppFactory;
 
+    private final TraceComponent tc = Tr.register(WARApplicationHandlerImpl.class);
+
     @Reference
     protected void setFutureMonitor(FutureMonitor fm) {
         futureMonitor = fm;
@@ -44,11 +48,24 @@ public class WARApplicationHandlerImpl implements ApplicationHandler<DeployedApp
     public ApplicationMonitoringInformation setUpApplicationMonitoring(ApplicationInformation<DeployedAppInfo> applicationInformation) {
         Container oldContainer = applicationInformation.getContainer();
 
-        final WARDeployedAppInfo deployedApp;
+        WARDeployedAppInfo deployedApp;
         try {
             deployedApp = (WARDeployedAppInfo) deployedAppFactory.createDeployedAppInfo(applicationInformation);
         } catch (UnableToAdaptException e) {
             throw new IllegalStateException(e);
+        } catch (IllegalArgumentException i) {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                // Ignore
+            } finally {
+                try {
+                    Tr.info(tc, "Attempting retry after recieving IllegalStateException..");
+                    deployedApp = (WARDeployedAppInfo) deployedAppFactory.createDeployedAppInfo(applicationInformation);
+                } catch (UnableToAdaptException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
         }
 
         return deployedApp.createApplicationMonitoringInformation(oldContainer);
@@ -60,7 +77,6 @@ public class WARApplicationHandlerImpl implements ApplicationHandler<DeployedApp
         final Future<Boolean> result = futureMonitor.createFuture(Boolean.class);
 
         WARDeployedAppInfo deployedApp = (WARDeployedAppInfo) applicationInformation.getHandlerInfo();
-
 
         if (!deployedApp.deployApp(result)) {
             futureMonitor.setResult(result, false);
