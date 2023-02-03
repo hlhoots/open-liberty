@@ -17,6 +17,9 @@
 ext {
   cnf = rootProject.project(bnd_cnf)
   buildImage = project(':build.image')
+  sourcePath = new ArrayList()
+  classPath = new ArrayList()
+  packageFiles = new ArrayList()
 
   /**
    * Store some of the properties determined at build time to a file named `generated.properties` for future builds.

@@ -218,6 +218,60 @@ task everythingElseHasBeenReleased {
     dependsOn parent.subprojects.minus(project).release
 }
 
+/**
+ HLHIII - api / spi prototype
+*/
+task buildApiSpiParts (type: Javadoc) { 
+  
+  // Gather the classpath jars and the source locations for all api/spi projects
+  gradleBndProjects.each { projectName ->
+        def bndProject = bndWorkspace.getProject(projectName)
+       
+        if (bndProject.get('publish.wlp.jar.suffix', 'lib').contains('api/ibm') || bndProject.get('publish.wlp.jar.suffix', 'lib').contains('spi/ibm')) {
+           
+    		def sp = files()
+    		def cp = files()
+    		
+    		bndWorkspace.getProject(projectName)?.getBuildpath().each {
+      			def proj = it.getProject()
+      			sp += files(proj.getSourcePath())
+      			cp += files(it.getFile())
+      			cp += files(proj.getBuildpath()*.getFile())
+      	 	} // each 
+      	 	
+      	 	rootProject.ext.classPath.add(cp)
+      	 	rootProject.ext.sourcePath.add(sp)
+      	 	rootProject.ext.packageFiles.add(bndProject.getName())
+       	} // if
+ 	} // each
+    
+    // Group all file collections into one collection for classpath
+ 	def tempCP = files()
+    for (FileCollection files : rootProject.ext.classPath) {
+    	tempCP += files
+    }
+   
+    classpath += tempCP
+    
+    source = rootProject.ext.sourcePath
+    // pkg = rootProject.ext.packageFiles
+    destinationDir = new File("C://temp//javadoc_frames_gradle")
+    exclude "**/resources/**" // this is broken..need to filter out the /resources/* stuff somehow
+    exclude "**/internal/**"
+    exclude "**/**.html**"  // this fixed the html that was pulled in.
+    title = "Open Liberty Api / Spi javadoc"
+    options.addBooleanOption('-frames', true)
+    options.addBooleanOption('html5', true)
+    //options.source bnd.get('javac.source')
+    options.memberLevel = 'PUBLIC'
+    options.noIndex true
+    options.use true
+    if (JavaVersion.current().isJava8Compatible()) {
+      options.addStringOption('Xdoclint:none', '-quiet')
+    }
+    
+}
+
 task createGradleBootstrap {
     dependsOn everythingElseHasBeenReleased
     doLast {
@@ -462,6 +516,9 @@ publishing {
         artifactId 'gradle-bootstrap'
         version project.version
         artifact zipGradleBootstrap
+        
+        // Need to add an artifact for the javadocFramesZip file in here -  HLHIII
+
     }
     libertyVersions(MavenPublication) {
         artifactId 'liberty-versions'
